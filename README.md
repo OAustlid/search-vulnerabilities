@@ -5,6 +5,8 @@ A Python CLI tool that walks a local directory tree of GitHub projects and repor
 ## Features
 
 - 🔍 Scans **JS/TS** (`package.json`) and **Python** manifest files (`requirements*.txt`, `pyproject.toml`, `setup.py`, `setup.cfg`, `Pipfile`)
+- 🤖 Scans **GitHub Actions workflows** (`.github/workflows/`) for `uses:` action references
+- 📋 **Batch mode** via a YAML config file — scan multiple packages × locations in one run
 - ⚡ **Concurrent** scanning via `ThreadPoolExecutor` (configurable thread count)
 - 🗂️ Optional `--scan-code` flag to also search `import`/`require` statements in source files
 - 🔒 **Never executes project code** — all parsing is purely static (regex + JSON/TOML/INI parsers)
@@ -27,6 +29,7 @@ Dependencies:
 | `rich` | Console table output |
 | `tomli` | TOML parsing on Python < 3.11 (stdlib `tomllib` used on ≥ 3.11) |
 | `packaging` | Robust PEP 508 requirement parsing |
+| `pyyaml` | YAML parsing for `--scan-config` batch mode |
 
 ---
 
@@ -34,6 +37,7 @@ Dependencies:
 
 ```
 python search_packages.py <start_location> <package_name> [options]
+python search_packages.py --scan-config <config_file> [options]
 ```
 
 ### Arguments
@@ -41,12 +45,13 @@ python search_packages.py <start_location> <package_name> [options]
 | Argument | Description |
 |----------|-------------|
 | `START_LOCATION` | Root directory to walk from |
-| `PACKAGE_NAME` | Package to search for (e.g. `requests`, `lodash`, `@scope/pkg`) |
+| `PACKAGE_NAME` | Package to search for (e.g. `requests`, `lodash`, `@scope/pkg`, `actions/checkout`) |
 
 ### Options
 
 | Flag | Description |
 |------|-------------|
+| `--scan-config FILE` | Path to a YAML config file for batch scanning (replaces positional args) |
 | `--scan-code` | Also scan source files for `import`/`require` statements (default: off) |
 | `--threads N` | Number of worker threads (default: `2 × CPU count`, max 32) |
 | `--no-color` | Disable Rich formatting; use plain text output |
@@ -71,7 +76,43 @@ python search_packages.py D:/git requests --no-color
 
 # Search for a scoped npm package
 python search_packages.py D:/git @angular/core --scan-code
+
+# Search for a GitHub Actions action (any version)
+python search_packages.py D:/git actions/checkout
+
+# Search for a specific action version (exact ref match)
+python search_packages.py D:/git actions/checkout@v4
+
+# Batch scan: multiple packages × multiple locations from a config file
+python search_packages.py --scan-config packages-to-be-scanned.yaml
 ```
+
+---
+
+## Batch Scanning (`--scan-config`)
+
+For scanning multiple packages across multiple locations in one run, use a YAML config file:
+
+```yaml
+locations:
+  - D:/git/my-projects
+  - C:/work/repos
+
+packages:
+  - requests
+  - lodash
+  - actions/checkout
+
+options:
+  scan_code: true   # optional; overridden by --scan-code CLI flag
+  threads: 16       # optional; overridden by --threads CLI flag
+```
+
+```bash
+python search_packages.py --scan-config my-config.yaml
+```
+
+Each file in a project is read exactly once regardless of how many packages are being searched for. Results are printed as one table per package.
 
 ---
 
@@ -113,6 +154,13 @@ Found 4 match(es) across 3 project(s).
 | `setup.cfg` | `[options] install_requires`, `[options.extras_require]` |
 | `Pipfile` | `[packages]`, `[dev-packages]` |
 
+### GitHub Actions
+| File | Fields checked |
+|------|---------------|
+| `.github/workflows/*.yml` / `*.yaml` | All `uses:` step references |
+
+Action references are matched case-insensitively. Include a `@ref` suffix in `PACKAGE_NAME` to pin to a specific version (e.g. `actions/checkout@v4`); omit it to match any version.
+
 ---
 
 ## Code Scanning (`--scan-code`)
@@ -152,6 +200,8 @@ search_packages.py        ← Entry point, CLI, ThreadPoolExecutor orchestration
 lib/
   discovery.py            ← Walk directory tree, identify project roots
   manifest.py             ← Static parsers for all manifest file types
+  workflow_scanner.py     ← Regex-based GitHub Actions `uses:` scanner
   code_scanner.py         ← Regex-based import/require scanner
+  config.py               ← YAML config file loader and validator
   output.py               ← Rich (or plain) console table output
 ```
