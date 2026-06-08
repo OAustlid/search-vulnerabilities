@@ -1,0 +1,10 @@
+locations:
+  - test_fixture
+
+packages:
+  - requests
+  - lodash
+  - actions/checkout
+
+options:
+  scan_code: true
